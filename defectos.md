@@ -1,124 +1,131 @@
-# Registro de Defectos
+# Registro de Defectos -- Pruebas de Carga y Rendimiento
 
-Este documento recopila los **defectos detectados durante las pruebas unitarias, de integración y de sistema** del proyecto **Registraduría**.
-Cada defecto se documenta de manera estructurada para facilitar su análisis, trazabilidad y corrección.
+Curso: Testing y Validación de Software\
+Proyecto: Pruebas de Carga y Rendimiento\
+Equipo: \[Nombre del equipo\]\
+Fecha: \[Fecha\]
 
----
+------------------------------------------------------------------------
 
-## Formato 1: Lista detallada (narrativa)
+## Introducción
 
-### Defecto 01 — Falta de validación de edad negativa *(Prueba unitaria)*
+Este documento recopila los defectos identificados durante la ejecución
+de pruebas de rendimiento (Baseline, Load, Stress, Spike, Soak y
+Regresión).\
+Cada defecto se documenta para garantizar trazabilidad, análisis técnico
+y propuesta de mejora.
 
-- **Capa afectada:** Dominio (`Registry.registerVoter`)
-- **Caso de prueba:** Registro de persona con edad `-1`.
-- **Entrada:**
-`Person(name="Juan", id=101, age=-1, gender=MALE, alive=true)`
-- **Resultado esperado:** `INVALID_AGE`
-- **Resultado obtenido:** `VALID`
-- **Causa probable:** La lógica de negocio no evalúa edades negativas.
-- **Tipo de prueba:** Unitaria (dominio puro)
-- **Estado:** Abierto
-- **Prioridad:** Alta
+------------------------------------------------------------------------
 
----
+# Formato 1: Lista detallada
 
-### Defecto 02 — Registro de persona fallecida *(Prueba unitaria)*
+## Defecto PERF-01 --- Incumplimiento de SLO de latencia bajo Load
 
-- **Capa afectada:** Dominio (`Registry.registerVoter`)
-- **Caso de prueba:** Persona con `alive=false`.
-- **Entrada:**
-`Person(name="Ana", id=102, age=45, gender=FEMALE, alive=false)`
-- **Resultado esperado:** `DEAD`
-- **Resultado obtenido:** `VALID`
-- **Causa probable:** No se valida correctamente la condición `alive=false`.
-- **Tipo de prueba:** Unitaria (regla de negocio)
-- **Estado:** En progreso
-- **Prioridad:** Media
+-   Capa afectada: Aplicación / Base de datos\
+-   Escenario: Load Test (200 VUs)\
+-   SLO definido: p95 \< 300 ms\
+-   Resultado esperado: Cumplimiento del SLO bajo carga nominal.\
+-   Resultado obtenido: p95 = 612 ms
 
----
+### Evidencia
 
-### Defecto 03 — No se detectan duplicados *(Prueba de integración con H2)*
+http_req_duration: avg=402ms\
+p(95)=612ms\
+p(99)=890ms
 
-- **Capa afectada:** Infraestructura (`RegistryRepository`)
-- **Caso de prueba:** Dos registros con el mismo `id`.
-- **Entradas:**
-  - Persona 1 → `Person(name="Carlos", id=200, age=30, gender=MALE, alive=true)`
-  - Persona 2 → `Person(name="Carla", id=200, age=25, gender=FEMALE, alive=true)`
-- **Resultado esperado:**
-  - Persona 1 → `VALID`
-  - Persona 2 → `DUPLICATED`
-- **Resultado obtenido:**
-  - Persona 1 → `VALID`
-  - Persona 2 → `VALID`
-- **Causa probable:** El método `existsById()` del repositorio no verifica correctamente la existencia previa del registro.
-- **Tipo de prueba:** Integración (H2 + capa de aplicación)
-- **Estado:** Abierto
-- **Prioridad:** Alta
+### Impacto
 
----
+Incumplimiento del objetivo de nivel de servicio bajo carga esperada.
 
-### Defecto 04 — Fallo en simulación con mock *(Prueba de integración con Mockito)*
+### Causa probable
 
-- **Capa afectada:** Aplicación (`RegistryWithMockTest`)
-- **Caso de prueba:** Registro con `id` duplicado en un repositorio simulado.
-- **Configuración:**
+-   Saturación del pool de conexiones.\
+-   Consulta sin índice.
 
-```java
-when(repo.existsById(7)).thenReturn(true);
-```
+### Estado
 
-- **Resultado esperado:** `DUPLICATED`
-- **Resultado obtenido:** `NullPointerException`
-- **Causa probable:** Dependencia `RegistryRepositoryPort` no inicializada correctamente durante el mock.
-- **Tipo de prueba:** Integración (mock)
-- **Estado:** En progreso
-- **Prioridad:** Media
+Abierto
 
----
+### Prioridad
 
-### Defecto 05 — Error HTTP 500 no manejado *(Prueba de sistema REST)*
+Alta
 
-- **Capa afectada:** Delivery (`RegistryController`)
-- **Caso de prueba:** Envío de JSON con campo `gender` inválido.
-- **Entrada:**
+------------------------------------------------------------------------
 
-```json
-{ "name": "Laura", "id": 500, "age": 20, "gender": "OTHER", "alive": true }
-```
+## Defecto PERF-02 --- Error rate elevado bajo Stress
 
-- **Resultado esperado:** `HTTP 400` (Bad Request)
-- **Resultado obtenido:** `HTTP 500` (Internal Server Error)
-- **Causa probable:** Falta de validación o manejo de excepción `IllegalArgumentException` en el controlador.
-- **Tipo de prueba:** Sistema (MockMvc)
-- **Estado:** Abierto
-- **Prioridad:** Alta
+-   Capa afectada: Servidor de aplicación\
+-   Escenario: Stress Test (600 VUs)\
+-   SLO definido: Error rate \< 1%\
+-   Resultado obtenido: 3.8%
 
----
+### Evidencia
 
-## Formato 2: Tabla de defectos (bug tracking)
+http_req_failed: 3.8%\
+status=500 detectado
 
-| ID | Caso de Prueba | Capa | Resultado Esperado | Resultado Obtenido | Tipo | Estado | Prioridad |
-|----|----------------|------|--------------------|--------------------|------|----------|------------|
-| 01 | Edad negativa | Dominio | `INVALID_AGE` | `VALID` | Unitaria | Abierto | Alta |
-| 02 | Persona muerta | Dominio | `DEAD` | `VALID` | Unitaria | En progreso | Media |
-| 03 | Duplicado por ID | Infraestructura | `DUPLICATED` | `VALID` | Integración | Abierto | Alta |
-| 04 | Mock mal configurado | Aplicación | `DUPLICATED` | `NullPointerException` | Integración (mock) | En progreso | Media |
-| 05 | Error HTTP 500 | Delivery | `HTTP 400` | `HTTP 500` | Sistema (REST) | Abierto | Alta |
+### Impacto
 
----
+Fallas del sistema bajo carga alta.
+
+### Causa probable
+
+-   Agotamiento de threads.\
+-   Configuración insuficiente.
+
+### Estado
+
+En progreso
+
+### Prioridad
+
+Crítica
+
+------------------------------------------------------------------------
+
+## Defecto PERF-03 --- Degradación progresiva en Soak Test
+
+-   Capa afectada: JVM / Memoria\
+-   Escenario: Soak Test (2 horas)\
+-   Resultado esperado: Latencia estable\
+-   Resultado obtenido: Incremento progresivo de 210ms a 480ms
+
+### Impacto
+
+Posible fuga de memoria o acumulación de recursos.
+
+### Estado
+
+Abierto
+
+### Prioridad
+
+Media
+
+------------------------------------------------------------------------
+
+# Formato 2: Tabla de seguimiento
+
+  ----------------------------------------------------------------------------------
+  ID        Escenario   Resultado Esperado Resultado Obtenido Estado     Prioridad
+  --------- ----------- ------------------ ------------------ ---------- -----------
+  PERF-01   Load        p95 \< 300ms       612ms              Abierto    Alta
+
+  PERF-02   Stress      Error \< 1%        3.8%               En         Crítica
+                                                              progreso   
+
+  PERF-03   Soak        Latencia estable   Degradación        Abierto    Media
+  ----------------------------------------------------------------------------------
+
+------------------------------------------------------------------------
 
 ## Convenciones de Estado
 
-| Estado | Significado |
-|---------|-------------|
-| **Abierto** | El defecto fue detectado pero no corregido. |
-| **En progreso** | El defecto se encuentra en análisis o corrección. |
-| **Resuelto** | El defecto fue corregido y validado mediante pruebas. |
+Abierto: Defecto identificado sin corrección aplicada.\
+En progreso: En proceso de corrección.\
+Resuelto: Corregido y validado con nuevas pruebas.
 
----
+------------------------------------------------------------------------
 
-## Observaciones
-
-- Los defectos detectados evidencian la importancia de **mantener pruebas unitarias robustas** antes de pasar a integración.
-- La validación cruzada entre pruebas con mocks e integración real (H2) permitió identificar inconsistencias en el flujo de persistencia.
-- Los errores en las pruebas REST destacan la necesidad de implementar **manejadores globales de excepciones (ControllerAdvice)** para mejorar la estabilidad del sistema.
+Universidad de La Sabana -- Facultad de Ingeniería\
+Curso: Testing y Validación de Software (2025-1)
