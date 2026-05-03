@@ -1,5 +1,4 @@
 # Taller de Pruebas de Carga y Rendimiento
-## Sistema de Registro de Votantes — Spring Boot API
 
 > **Curso:** Diseño y Arquitectura de Software <br>
 > **Programa:** Ingeniería Informática — Universidad de La Sabana <br>
@@ -9,6 +8,7 @@
 > - Juan David Sanchez Roldan - 0000340321
 > - Yuly Dayana Rodríguez Salcedo - 0000305314
 
+## Sistema de Registro de Votantes — Spring Boot API
 
 ---
 
@@ -88,7 +88,7 @@ curl -X POST http://localhost:8080/register \
 ### Generar el dataset
 
 ```bash
-python generate_persons.py --rows 200 --output perf/data/persons.csv
+python generate_persons.py --rows 250 --output perf/data/persons.csv
 ```
 
 > El generador produce únicamente personas con `alive=true` para evitar fallos de validación de negocio durante las pruebas.
@@ -140,36 +140,36 @@ k6 run \
 
 ---
 
-## 📊 Resultados obtenidos
+## 📊 Resultados obtenidos (post-corrección DEF-02)
 
-| Métrica | Baseline | Carga | Estrés | SLO |
-|---|---|---|---|---|
-| p(95) latencia | 15.60 ms | 400.1 ms | 589.8 ms | ≤ 300 ms |
-| p(99) latencia | 26.28 ms | 561.5 ms | 990.1 ms | ≤ 800 ms |
-| Error rate HTTP | 0% | 0% | 0.005% | < 1% |
-| register_failed | 0.34% | 0.77% | 1.96% | < 1% |
-| Throughput | 1,847 req/s | 2,183 req/s | 2,071 req/s | ≥ 100 req/s |
-| VUs máximos | 20 | 200 | 600 | — |
-| Total iteraciones | 554,211 | 1,833,665 | 1,118,398 | — |
+| Métrica | Baseline | Carga | Estrés | SLO | ¿Cumple global? |
+|---|---|---|---|---|---|
+| p(95) latencia | **26.41 ms** | 455.51 ms | 541.56 ms | ≤ 300 ms | ❌ |
+| p(99) latencia | **46.88 ms** | 616.48 ms | **741.86 ms** | ≤ 800 ms | ✅ |
+| Error rate HTTP | **0.32%** | **0.51%** | 1.72% | < 1% | ❌ |
+| register_failed | **0.32%** | **0.51%** | 1.72% | < 1% | ❌ |
+| Throughput | **1,759 req/s** | **2,303 req/s** | **2,346 req/s** | ≥ 100 req/s | ✅ |
+| VUs máximos | 20 | 200 | 600 | — | — |
+| Total iteraciones | 527,777 | 1,934,551 | 1,266,784 | — | — |
 
 ### Análisis por escenario
 
-**Baseline:** Todos los SLO cumplidos. p(95) de 26.1 ms con amplio margen sobre el límite de 300 ms. Línea base establecida correctamente.
+**Baseline:** Todos los SLO cumplidos. p(95) de **26.41 ms** con amplio margen sobre el límite de 300 ms. p(99) de **46.88 ms**, muy por debajo del límite de 800 ms. `register_failed` de **0.32%**, bajo el umbral de 1%. Línea base establecida correctamente.
 
-**Carga:** p(95) supera el SLO (400.1 ms vs 300 ms). p(99) dentro del límite (561.5 ms). El `register_failed` de 0.77% se mantiene bajo el umbral pero evidencia que el DEF-02 se activa bajo concurrencia de 200 VUs.
+**Carga:** p(95) supera el SLO (455.51 ms vs 300 ms). p(99) de **616.48 ms**, dentro del límite de 800 ms. `register_failed` de **0.51%**, por debajo del umbral de 1% y mejorado respecto a la ejecución pre-corrección (0.77%). La corrección del DEF-02 redujo los fallos de negocio en carga, aunque el cuello de botella de latencia de escritura en H2 persiste.
 
-**Estrés:** Sistema bajo presión evidente a 600 VUs. p(95) en 589.8 ms, p(99) en 990.1 ms (supera SLO de 800 ms). `register_failed` sube a 1.96% confirmando que el DEF-02 (race condition) se agrava proporcionalmente con la concurrencia.
+**Estrés:** Sistema bajo presión evidente a 600 VUs. p(95) de **541.56 ms** y p(99) de **741.86 ms** — este último ahora **dentro del SLO de 800 ms** (mejora de 248 ms respecto a la ejecución anterior donde era 990.1 ms). `register_failed` de **1.72%**, mejorado respecto al 1.96% pre-corrección pero aún por encima del umbral de 1% bajo carga extrema. El throughput mejoró un **13.3%** (de 2,071 a 2,346 req/s), evidenciando el impacto positivo de eliminar la doble consulta a BD.
 
 ---
 
 ## 🐛 Defectos encontrados
 
-Ver [`defectos.md`](./defectos.md) para el registro completo.
+Ver [`defectos.md`](./defectos.md) para el registro completo con evidencias y análisis detallado.
 
 | ID | Descripción breve | Escenario | Estado |
 |---|---|---|---|
-| DEF-01 | Body `DEAD` en personas `alive=false` — 7.1% de fallos | Baseline inicial | Resuelto |
-| DEF-02 | Race condition en `existsById + save` sin transacción | Baseline / Carga / Estrés | Abierto |
+| DEF-01 | Body `DEAD` en personas `alive=false` — 7.1% de fallos | Baseline inicial | ✅ Resuelto |
+| DEF-02 | Race condition en `existsById + save` sin atomicidad | Baseline / Carga / Estrés | ✅ Resuelto |
 
 ---
 
