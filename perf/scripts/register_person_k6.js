@@ -1,28 +1,27 @@
-
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { Trend, Rate, Counter } from 'k6/metrics';
-import { SharedArray } from 'k6/data';
+import http from "k6/http";
+import { check, sleep } from "k6";
+import { Trend, Rate, Counter } from "k6/metrics";
+import { SharedArray } from "k6/data";
 
 /**
  * =========================
  * Configuración por entorno
  * =========================
  */
-const BASE_URL   = __ENV.BASE_URL || 'http://localhost:8080';
-const DATA_FILE  = __ENV.DATA_FILE || null; // si no viene, el script intentará rutas por defecto
-const SCENARIO   = (__ENV.SCENARIO || 'baseline').toLowerCase();
+const BASE_URL = __ENV.BASE_URL || "http://localhost:8080";
+const DATA_FILE = __ENV.DATA_FILE || null; // si no viene, el script intentará rutas por defecto
+const SCENARIO = (__ENV.SCENARIO || "baseline").toLowerCase();
 const TIMEOUT_MS = Number(__ENV.TIMEOUT_MS || 2000);
-const SLEEP_MS   = Number(__ENV.SLEEP_MS || 0); // micro-pausa opcional entre iteraciones
+const SLEEP_MS = Number(__ENV.SLEEP_MS || 0); // micro-pausa opcional entre iteraciones
 
 /**
  * =========================
  * Métricas personalizadas
  * =========================
  */
-const registerDuration = new Trend('register_duration');     // duración de /register
-const registerFailed   = new Rate('register_failed');        // check fallido
-const statusCount      = new Counter('status_count');        // contador de respuestas por código
+const registerDuration = new Trend("register_duration"); // duración de /register
+const registerFailed = new Rate("register_failed"); // check fallido
+const statusCount = new Counter("status_count"); // contador de respuestas por código
 
 /**
  * =========================
@@ -41,26 +40,37 @@ function tryOpen(path) {
   }
 }
 
-const persons = new SharedArray('persons', function () {
+const persons = new SharedArray("persons", function () {
   let csvText = null;
   if (DATA_FILE) {
     csvText = tryOpen(DATA_FILE);
     if (!csvText) {
-      throw new Error(`No se pudo abrir DATA_FILE='${DATA_FILE}'. Verifica la ruta.`);
+      throw new Error(
+        `No se pudo abrir DATA_FILE='${DATA_FILE}'. Verifica la ruta.`,
+      );
     }
   } else {
-    csvText = tryOpen('perf/data/persons.csv') || tryOpen('../data/persons.csv');
+    csvText =
+      tryOpen("perf/data/persons.csv") || tryOpen("../data/persons.csv");
     if (!csvText) {
-      throw new Error("No se encontró persons.csv. Usa __ENV.DATA_FILE o ejecuta desde la raíz del repo.");
+      throw new Error(
+        "No se encontró persons.csv. Usa __ENV.DATA_FILE o ejecuta desde la raíz del repo.",
+      );
     }
   }
   const lines = csvText.trim().split(/\r?\n/);
   const header = lines.shift(); // descartar cabecera
   return lines.map((l) => {
     // CSV simple: id,name,age,gender,alive
-    const parts = l.split(',');
+    const parts = l.split(",");
     const [id, name, age, gender, alive] = parts.map((x) => String(x).trim());
-    return { id: Number(id), name, age: Number(age), gender, alive: alive.toLowerCase() === 'true' };
+    return {
+      id: Number(id),
+      name,
+      age: Number(age),
+      gender,
+      alive: alive.toLowerCase() === "true",
+    };
   });
 });
 
@@ -72,53 +82,53 @@ const persons = new SharedArray('persons', function () {
  */
 const ALL_SCENARIOS = {
   baseline: {
-    executor: 'constant-vus',
+    executor: "constant-vus",
     vus: 20,
-    duration: '5m',
-    gracefulStop: '30s',
+    duration: "5m",
+    gracefulStop: "30s",
   },
   load: {
-    executor: 'ramping-vus',
+    executor: "ramping-vus",
     startVUs: 0,
     stages: [
-      { duration: '2m', target: 200 },
-      { duration: '10m', target: 200 },
-      { duration: '2m', target: 0 },
+      { duration: "2m", target: 200 },
+      { duration: "10m", target: 200 },
+      { duration: "2m", target: 0 },
     ],
-    gracefulRampDown: '30s',
+    gracefulRampDown: "30s",
   },
   stress: {
-    executor: 'ramping-vus',
-    startVUs: 200,
+    executor: "ramping-vus",
+    startVUs: 0,
     stages: [
-      { duration: '5m', target: 600 },
-      { duration: '3m', target: 600 },
-      { duration: '2m', target: 0 },
+      { duration: "2m", target: 200 }, // warmup
+      { duration: "5m", target: 600 }, // estrés real
+      { duration: "2m", target: 0 },
     ],
-    gracefulRampDown: '30s',
+    gracefulRampDown: "30s",
   },
   spike: {
-    executor: 'ramping-vus',
+    executor: "ramping-vus",
     startVUs: 50,
     stages: [
-      { duration: '1m', target: 300 }, // pico rápido
-      { duration: '2m', target: 50 },  // recuperación
-      { duration: '1m', target: 0 },
+      { duration: "1m", target: 300 }, // pico rápido
+      { duration: "2m", target: 50 }, // recuperación
+      { duration: "1m", target: 0 },
     ],
-    gracefulRampDown: '30s',
+    gracefulRampDown: "30s",
   },
   soak: {
-    executor: 'constant-vus',
+    executor: "constant-vus",
     vus: 100,
-    duration: '2h',
-    gracefulStop: '1m',
+    duration: "2h",
+    gracefulStop: "1m",
   },
   regression: {
     // Ejecución corta pensada para comparar builds (antes/después)
-    executor: 'constant-vus',
+    executor: "constant-vus",
     vus: 20,
-    duration: '5m',
-    gracefulStop: '30s',
+    duration: "5m",
+    gracefulStop: "30s",
   },
 };
 
@@ -129,13 +139,15 @@ function buildOptions() {
     console.warn(`SCENARIO='${SCENARIO}' no reconocido. Usando 'baseline'.`);
   }
   return {
+    summaryTrendStats: ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
+
     thresholds: {
-      http_req_failed: ['rate<0.01'],             // <1% de fallos HTTP globales
-      'http_req_duration{status:200}': ['p(95)<300', 'p(99)<800'], // SLO sugeridos
-      register_failed: ['rate<0.01'],             // <1% de fallos de validación
+      http_req_failed: ["rate<0.01"], // <1% de fallos HTTP globales
+      "http_req_duration{status:200}": ["p(95)<300", "p(99)<800"], // SLO sugeridos
+      register_failed: ["rate<0.01"], // <1% de fallos de validación
     },
     scenarios: {
-      run: chosen || ALL_SCENARIOS['baseline'],
+      run: chosen || ALL_SCENARIOS["baseline"],
     },
     discardResponseBodies: false,
     noConnectionReuse: false,
@@ -153,7 +165,7 @@ function buildUniqueId(baseId) {
   // Genera IDs únicos por iteración combinando base del CSV, VU e iteración
   // Fórmula: baseId * 1_000_000 + __VU * 10_000 + __ITER
   // Evita colisiones en BD cuando hay índices únicos por id.
-  return (baseId * 1000000) + (__VU * 10000) + __ITER;
+  return baseId * 1000000 + __VU * 10000 + __ITER;
 }
 
 function nextPayload() {
@@ -176,10 +188,10 @@ function nextPayload() {
 export default function () {
   const payload = nextPayload();
   const params = {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { "Content-Type": "application/json" },
     timeout: `${TIMEOUT_MS}ms`,
     // Etiquetas opcionales: útiles para filtrar métricas
-    tags: { endpoint: '/register', scenario: SCENARIO },
+    tags: { endpoint: "/register", scenario: SCENARIO },
   };
 
   const res = http.post(`${BASE_URL}/register`, payload, params);
@@ -189,18 +201,22 @@ export default function () {
   statusCount.add(1, { status: String(res.status) });
 
   // Normalizamos el body para validación robusta
-  const bodyText = String(res.body || '').trim().toUpperCase();
+  const bodyText = String(res.body || "")
+    .trim()
+    .toUpperCase();
 
   const ok = check(res, {
-    'status 200': (r) => r.status === 200,
-    'body VALID': (_) => bodyText.includes('VALID'), // tolerante a variaciones
+    "status 200": (r) => r.status === 200,
+    "body VALID": (_) => bodyText === "VALID",
   });
 
   registerFailed.add(!ok);
 
   // Log puntual para diagnóstico (1 de cada 1000 iteraciones por VU)
-  if (!ok && (__ITER % 1000 === 0)) {
-    console.error(`[ERR][${SCENARIO}] status=${res.status} body='${String(res.body).slice(0, 160)}'`);
+  if (!ok && __ITER % 1000 === 0) {
+    console.error(
+      `[ERR][${SCENARIO}] status=${res.status} body='${String(res.body).slice(0, 160)}'`,
+    );
   }
 
   if (SLEEP_MS > 0) {
@@ -217,7 +233,7 @@ export default function () {
  */
 export function handleSummary(data) {
   // Nombre de archivo según escenario
-  const scen = SCENARIO || 'baseline';
+  const scen = SCENARIO || "baseline";
   const path = `perf/results/summary-${scen}.json`;
   return {
     [path]: JSON.stringify(data, null, 2),
