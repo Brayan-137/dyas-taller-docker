@@ -3,26 +3,19 @@ package edu.unisabana.tyvs.registry.application.usecase;
 import edu.unisabana.tyvs.registry.application.port.out.RegistryRepositoryPort;
 import edu.unisabana.tyvs.registry.domain.model.Person;
 import edu.unisabana.tyvs.registry.domain.model.RegisterResult;
+import org.springframework.dao.DataIntegrityViolationException;
 
 public class Registry {
 
     private final RegistryRepositoryPort repo;
 
-    // <<< ESTE es el constructor que falta >>>
     public Registry(RegistryRepositoryPort repo) {
         this.repo = repo;
     }
 
-    // Si tenías un constructor vacío y lo quieres conservar, puedes dejarlo,
-    // pero el IT usará SIEMPRE el constructor con puerto.
-    public Registry() {
-        this.repo = null;
-    }
-
     public RegisterResult registerVoter(Person p) {
-        if (p == null)
-            return RegisterResult.INVALID;
-        if (p.getId() <= 0)
+        // 1. Validaciones de Negocio (Fail-fast)
+        if (p == null || p.getId() <= 0)
             return RegisterResult.INVALID;
         if (!p.isAlive())
             return RegisterResult.DEAD;
@@ -30,15 +23,23 @@ public class Registry {
             return RegisterResult.UNDERAGE;
 
         try {
-            if (repo.existsById(p.getId()))
-                return RegisterResult.DUPLICATED;
+            /* 
+               ELIMINACIÓN DEL CHECK-THEN-ACT:
+               No llamamos a existsById(). Intentamos persistir directamente.
+               Esto resuelve la condición de carrera donde dos hilos pasaban 
+               el check simultáneamente antes de que el primero guardara.
+            */
             repo.save(p.getId(), p.getName(), p.getAge(), p.isAlive());
             return RegisterResult.VALID;
+            
+        } catch (DataIntegrityViolationException e) {
+            // Captura específica de violación de unicidad en la DB (ID duplicado)
+            return RegisterResult.DUPLICATED;
+            
         } catch (Exception e) {
-            // MIENTRAS DIAGNOSTICAMOS: muestra el tipo y el mensaje real
-            throw new IllegalStateException("Persistencia: " + e.getClass().getSimpleName() + " - " + e.getMessage(),
-                    e);
+            // Manejo de errores inesperados de infraestructura
+            throw new IllegalStateException("Error de persistencia no controlado: " 
+                + e.getClass().getSimpleName(), e);
         }
     }
-
 }
