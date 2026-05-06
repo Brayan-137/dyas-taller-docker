@@ -1,474 +1,388 @@
+# Taller de Docker
 
-# Taller de Pruebas de Carga y Rendimiento
+## Crear imágenes propias
 
-Este taller tiene como objetivo aprender a **diseñar, implementar y ejecutar pruebas de carga y rendimiento** sobre un sistema tipo API/HTTP, aplicando buenas prácticas de ingeniería, análisis de resultados y automatización con CI.
+Ya hemos visto cómo usar imágenes de terceros para crear aplicaciones y servicios. Pero, ¿qué pasa si no hay ninguna imagen que tenga lo que queremos? ¿O si queremos hacer una imagen de nuestra aplicación para distribuirla?
 
----
+Docker permite crear imágenes propias. Aunque podríamos hacerla partiendo de cero, es un esfuerzo que no tiene sentido. Existen ya imágenes base para crear las nuestras y es mucho más fácil crear una imagen basándose en otra que hacerlo todo nosotros.
 
-## 🎯 Objetivo General
+Podemos partir de una imagen base que parte de un lenguaje de programación (Python, PHP) o de alguna distribución (Ubuntu, Debian).
 
-Comprender, diseñar e implementar **pruebas de rendimiento** (baseline, carga, stress, spike, soak) con herramientas como **JMeter / k6 / Gatling**, definiendo **SLA/SLO**, modelos de carga, datos de prueba, y generando **reportes reproducibles** para la toma de decisiones técnicas.
+## Mi primer Dockerfile
 
----
+Los Dockerfile son los archivos que contienen las instrucciones que crean las imágenes. Deben estar guardados dentro de un build context, es decir, un directorio. Este directorio es el que contiene todos los archivos necesarios para construir nuestra imagen, de ahí lo de build context.
 
-## 📑 Índice
-
-- [Conceptos clave](#conceptos-clave)
-- [COMOCE EL TALLER](#comoce-el-taller)
-  - [Estructura de proyecto](#estructura-de-proyecto)
-  - [Herramientas y dependencias](#herramientas-y-dependencias)
-- [Tipos de pruebas de rendimiento](#tipos-de-pruebas-de-rendimiento)
-- [Diseño del plan de pruebas](#diseño-del-plan-de-pruebas)
-- [Modelos de carga](#modelos-de-carga)
-- [Escenarios de prueba](#escenarios-de-prueba)
-- [Métricas y criterios de aceptación](#métricas-y-criterios-de-aceptación)
-- [Script de ejemplo (JMeter)](#script-de-ejemplo-jmeter)
-- [Ejecución local y en CI](#ejecución-local-y-en-ci)
-- [Análisis de resultados](#análisis-de-resultados)
-- [Buenas prácticas](#buenas-prácticas)
-- [Para entregar](#para-entregar-con-este-taller)
-- [Resumen del Taller](#hagamos-un-resumen)
-- [Conclusión](#conclusión)
-- [Recursos recomendados](#recursos-recomendados)
-- [Créditos y uso académico](#créditos-y-uso-académico)
-- [Licencia](#licencia-de-uso)
-
----
-
-## Conceptos clave
-
-- **Prueba de rendimiento**: evalúa la **capacidad del sistema** bajo diferentes niveles de carga (tiempo de respuesta, throughput, consumo de CPU/Memoria, errores).
-- **Prueba de carga**: verifica el comportamiento del sistema en **niveles esperados de demanda** (usuarios concurrentes/reqs por segundo).
-- **Prueba de estrés**: empuja el sistema **más allá de su capacidad** para identificar el punto de falla y su degradación.
-- **Prueba de picos (spike)**: aplica aumentos **bruscos** de tráfico para evaluar elasticidad y resiliencia.
-- **Prueba de resistencia (soak)**: mantiene una carga prolongada para descubrir **fugas de memoria**, acumulación de conexiones, etc.
-- **SLA/SLO/SLI**: conceptos fundamentales de confiabilidad **acordados/objetivo** (p.ej., *p95 Latency < 300 ms, Error Rate < 1%*).
-
----
-
-## COMOCE EL TALLER
-
-### Estructura de proyecto
-
-```gherkin
-perf/
- ├─ scripts/                 # .jmx (JMeter), .js (k6) o .scala (Gatling)
- ├─ data/                    # datos de prueba (CSV, JSON)
- ├─ results/                 # reportes y artefactos (HTML/CSV/JTL)
- ├─ dashboards/              # plantillas de dashboards (Grafana, etc.)
- ├─ ci/                      # pipelines (GitHub Actions/Jenkins/GitLab CI)
- └─ README.md                # este documento
-```
-
-### Herramientas y dependencias
-
-- **JMeter** (GUI + CLI): para crear planes de prueba (.jmx) y ejecutarlos en CLI para CI/CD.
-- **k6** (CLI-first): scripts en JS, fácil de versionar, buen soporte de métricas.
-- **Gatling** (Scala): alto desempeño, reportes HTML detallados.
-- **Soporte de monitoreo**: Prometheus/Grafana, APM (New Relic, Datadog, Elastic APM).
-- **Utilitarios**: `jq`, `csvkit`, `python` para post-procesamiento de resultados.
-
-> Puedes usar **JMeter** como herramienta principal y complementar con k6 o Gatling según preferencias del equipo.
-
----
-
-## Tipos de pruebas de rendimiento
-
-1. **Smoke de performance**: 1–2 min, baja carga, valida que el entorno responde.
-2. **Baseline**: establece la línea base (sin optimizaciones) para comparar.
-3. **Carga**: demanda esperada (p.ej., 50–200 usuarios concurrentes).
-4. **Estrés**: incrementos progresivos hasta saturación y fallo controlado.
-5. **Picos (Spike)**: saltos abruptos (x5–x10) para medir recuperación.
-6. **Resistencia (Soak)**: 1–4 horas (o más) a carga estable para detectar degradación.
-
----
-
-## Diseño del plan de pruebas
-
-- **Alcance**: endpoints críticos (p.ej., `POST /login`, `GET /orders`, `POST /register`).
-
-**Ejemplo:**
-
-**Ruta:** `POST /register`  
-**Body esperado (JSON):**
-
-```json
-{
-  "name": "Ana",
-  "id": 100,
-  "age": 30,
-  "gender": "FEMALE",
-  "alive": true
-}
-```
-
-**Respuesta esperada:** `200 OK` con cuerpo `VALID` (texto).
-
-> Puedes ajustar las validaciones del script si tu servicio responde de forma diferente (por ejemplo, JSON con campos específicos).
-
-- **SLA/SLO**: p95 < 300 ms, p99 < 800 ms, error rate < 1%.
-- **Datos de prueba**: usuarios, tokens, catálogos; evitar “caché feliz” usando **parametrización** y **correlación**.
-- **Ambiente**: staging lo más **representativo** posible (réplicas, RAM/CPU, versión).
-- **Calentamiento (warmup)**: 2–5 min para estabilizar JIT/cachés.
-- **Monitoreo**: CPU, Mem, GC, hilos, conexiones, I/O, tiempos de DB y colas (RabbitMQ/Kafka si aplica).
-- **Riesgos**: límites de rate, *throttling*, dependencias externas, *feature flags*.
-
----
-
-## Modelos de carga
-
-- **Usuarios concurrentes (VUs)**: cantidad de usuarios simultáneos.
-- **Req/s (RPS)**: útil para APIs idempotentes.
-- **Rampa (ramp-up/ramp-down)**: crecimiento/descenso controlado.
-- **Closed vs Open models**: *closed* controla VUs; *open* controla la tasa de llegada (RPS).
-- **Patrones de tráfico**: horario laboral, eventos, campañas, estacionalidad.
-
----
-
-## Pre-requisitos
-
-- Servicio **Spring Boot** corriendo localmente en `http://localhost:8080` (o URL base equivalente).
-- **k6** instalado: <https://grafana.com/docs/k6/latest/get-started/installation/>
-- (Opcional) Base de datos o perfil `perf` para datos sintéticos.
-
-## Instalación de k6
-
-### Windows
-
-#### Opción 1 – Chocolatey
+Creamos nuestro build context:
 
 ```bash
-choco install k6
+mkdir -p ~/Sites/hello-world
+cd ~/Sites/hello-world
+echo "hello" > hello
 ```
 
-#### Opción 2 – Winget
+Dentro de este directorio crearemos un archivo llamado `Dockerfile` con este contenido:
+
+### Dockerfile
+
+```dockerfile
+FROM busybox
+COPY /hello /
+RUN cat /hello
+```
+
+| Directiva | Explicación                                                   |
+|-----------|---------------------------------------------------------------|
+| FROM      | Indica la imagen base sobre la que se basa esta imagen        |
+| COPY      | Copia un archivo del build context y lo guarda en la imagen   |
+| RUN       | Ejecuta el comando indicado durante el proceso de creación de imagen |
+
+Ahora para crear nuestra imagen usaremos `docker build`:
 
 ```bash
-winget install grafana.k6
+docker build -t helloapp:v1 .
 ```
 
-#### Opción 3 – Manual
+El parámetro `-t` nos permite etiquetar la imagen con un nombre y una versión. El `.` indica que el build context es el directorio actual.
 
-1. Descarga desde la página oficial:  
-   [https://grafana.com/docs/k6/latest/get-started/installation/](https://grafana.com/docs/k6/latest/get-started/installation/)
-2. Descomprime el `.zip` en:  
-   `C:\Program Files\k6\`
-3. Agrega esa ruta al **PATH** de tu sistema.
-4. Verifica la instalación:
+El resultado de ejecutar lo anterior sería:
 
 ```bash
-k6 version
+$ docker build -t helloapp:v1 .
+Sending build context to Docker daemon  3.072kB
+Step 1/3 : FROM busybox
+latest: Pulling from library/busybox
+8c5a7da1afbc: Pull complete 
+Digest: sha256:cb63aa0641a885f54de20f61d152187419e8f6b159ed11a251a09d115fdff9bd
+Status: Downloaded newer image for busybox:latest
+ ---> e1ddd7948a1c
+Step 2/3 : COPY /hello /
+ ---> 8a092965dbc9
+Step 3/3 : RUN cat /hello
+ ---> Running in 83b5498790ca
+hello
+Removing intermediate container 83b5498790ca
+ ---> f738f117d4b6
+Successfully built f738f117d4b6
+Successfully tagged helloapp:v1
 ```
 
-### Linux / Mac
+Y podremos ver que una nueva imagen está instalada en nuestro equipo:
 
 ```bash
-curl -s https://packagecloud.io/install/repositories/loadimpact/k6/script.deb.sh | sudo bash
-sudo apt install k6
+$ docker images
+REPOSITORY   TAG  IMAGE ID      CREATED         SIZE
+helloapp     v1   f738f117d4b6  40 seconds ago  1.16MB
 ```
 
-> Verifica siempre con `k6 version` que esté disponible globalmente.
+## Creando aplicaciones en contenedores
 
----
-
-## Escenarios de prueba
-
-- **Escenario A – Baseline**: 5 min warmup + 10 min a 50 VUs, medir p50/p95/p99 y error rate.
-- **Escenario B – Carga**: rampa 0→200 VUs en 10 min, sostener 20 min.
-- **Escenario C – Estrés**: rampa 200→600 VUs, detectar punto de quiebre.
-- **Escenario D – Spike**: saltos de 50→300 VUs por 1–2 min, recuperación a 50 VUs.
-- **Escenario E – Soak**: 2 horas a 120 VUs, revisar GC, memoria y *leaks*.
-
----
-
-## Métricas y criterios de aceptación
-
-- **Latencias**: p50/p90/p95/p99, *max*.
-- **Throughput**: req/s.
-- **Errores**: 4xx, 5xx, timeouts, *connection reset*.
-- **Recursos**: CPU, RAM, GC, FD, *threads*, conexiones DB, colas.
-- **Capacidad**: utilización del 70–80% con SLO cumplidos.
-- **Criterios**: aprobar si p95 ≤ SLO y errores ≤ 1%; reprobar si se exceden límites o hay *leaks*.
-
----
-
-## Dataset mínimo `perf/data/persons.csv`
-
-Ejemplo de **5 filas** (puedes ampliarlo a cientos/miles):
-
-```csv
-id,name,age,gender,alive
-101,Juan,28,MALE,true
-102,María,31,FEMALE,true
-103,Carlos,25,MALE,true
-104,Sofia,27,FEMALE,true
-105,Andrés,35,MALE,true
-```
-
----
-
-## Script de prueba `perf/scripts/register_person_k6.js`
-
-El script envía solicitudes `POST /register` con datos del CSV, valida **status 200** y que el cuerpo contenga `VALID`.  
-Variables de entorno soportadas:
-
-- `BASE_URL` (por defecto `http://localhost:8080`)
-- `DATA_FILE` (por defecto `perf/data/persons.csv`)
-- `SCENARIO`: `baseline` | `load` | `stress` (por defecto `baseline`)
-- `TIMEOUT_MS`: timeout del cliente HTTP (por defecto `2000`)
-
-> Si ya tienes el archivo desde el taller, úsalo tal cual. Si no, crea uno con el contenido proporcionado anteriormente.
-
----
-
-## Paso a paso: **Ejecución básica**
-
-### 1) Levanta el servicio
+Vamos a crear una aplicación en Python y la vamos a guardar en un contenedor. Comenzamos creando un nuevo build context:
 
 ```bash
-mvn -DskipTests spring-boot:run
-# o
-java -jar target/app.jar
+mkdir -p ~/Sites/friendlyhello
+cd ~/Sites/friendlyhello
 ```
 
-Confirma que `/register` responde con `200 OK` y `VALID` para un JSON válido.
+El código de la aplicación es el siguiente, lo guardaremos en un archivo llamado `app.py`:
+
+### app.py
+
+```python
+from flask import Flask
+from redis import Redis, RedisError
+import os
+import socket
+
+# Connect to Redis
+redis = Redis(host="redis", db=0, socket_connect_timeout=2, socket_timeout=2)
+
+app = Flask(__name__)
+
+@app.route("/")
+def hello():
+    try:
+        visits = redis.incr("counter")
+    except RedisError:
+        visits = "<i>cannot connect to Redis, counter disabled</i>"
+
+    html = "<h3>Hello {name}!</h3>" \
+            "<b>Hostname:</b> {hostname}<br/>" \
+            "<b>Visits:</b> {visits}"
+    return html.format(name=os.getenv("NAME", "world"), hostname=socket.gethostname(),  visits=visits)
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=80)
+```
+
+Nuestra aplicación tiene una serie de dependencias (librerías de terceros) que guardaremos en el archivo `requirements.txt`:
+
+### requirements.txt
+
+```text
+Flask
+Redis
+```
+
+Y por último definimos nuestro Dockerfile:
+
+### Dockerfile
+
+```dockerfile
+# Partimos de una base oficial de python
+FROM python:3-slim
+
+# El directorio de trabajo es desde donde se ejecuta el contenedor al iniciarse
+WORKDIR /app
+
+# Copiamos todos los archivos del build context al directorio /app del contenedor
+COPY . /app
+
+# Ejecutamos pip para instalar las dependencias en el contenedor
+RUN pip install --trusted-host pypi.python.org -r requirements.txt
+
+# Indicamos que este contenedor se comunica por el puerto 80/tcp
+EXPOSE 80
+
+# Declaramos una variable de entorno
+ENV NAME World
+
+# Ejecuta nuestra aplicación cuando se inicia el contenedor
+CMD ["python", "app.py"]
+```
+
+Para conocer todas las directivas visita la [documentación oficial de Dockerfile](https://docs.docker.com/engine/reference/builder/).
+
+En total debemos tener 3 archivos:
 
 ```bash
-curl -X POST http://localhost:8080/register \
-  -H "Content-Type: application/json" \
-  -d "{\"name\":\"Ana\",\"id\":1,\"age\":30,\"gender\":\"FEMALE\",\"alive\":true}"
+$ ls
+app.py  Dockerfile  requirements.txt
 ```
 
-### 2) Baseline (calentamiento + medición corta)
+Ahora construimos la imagen de nuestra aplicación:
 
 ```bash
-set BASE_URL="http://localhost:8080" 
-set SCENARIO="baseline" 
-set k6 run perf/scripts/register_person_k6.js -o json=perf/results/baseline.json
+docker build -t friendlyhello .
 ```
 
-### 3) Carga (rampa hasta 200 VUs)
+Y comprobamos que está creada:
 
 ```bash
-set BASE_URL=http://localhost:8080
-set SCENARIO='load' 
-k6 run perf/scripts/register_person_k6.js -o json=perf/results/load.json
+$ docker image ls
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+friendlyhello       latest              88a822b3107c        56 seconds ago      132MB
 ```
 
-### 4) Resultados
+## Probar nuestro contenedor
 
-Al finalizar cada corrida, k6 mostrará algo como:
+Vamos a arrancar nuestro contenedor y probar la aplicación:
 
-```gherkin
-http_req_duration........: p(95)=220ms p(99)=410ms
-http_req_failed..........: 0.7%
-iterations...............: 10k
+```bash
+docker run --rm -p 4000:80 friendlyhello
 ```
 
-Guarda los `*.json` en `perf/results/` y documenta un breve análisis.
+Tip:
 
----
+Normalmente los contenedores son de usar y tirar, sobre todo cuando hacemos pruebas. El parámetro `--rm` borra automáticamente un contenedor cuando se para. Recordemos que los datos volátiles siempre se deben guardar en volúmenes.
 
-## SLO / SLA sugeridos (ajústalos a tu entorno)
+Lo que arranca la aplicación Flask:
 
-| Métrica         | Objetivo            |
-|-----------------|---------------------|
-| p95 latencia    | ≤ 300 ms            |
-| p99 latencia    | ≤ 800 ms            |
-| Error rate      | < 1%                |
-| Throughput base | ≥ 100 req/s (referencia) |
+```bash
+$ docker run --rm -p 4000:80 friendlyhello
+ * Serving Flask app "app" (lazy loading)
+ * Environment: production
+   WARNING: Do not use the development server in a production environment.
+   Use a production WSGI server instead.
+ * Debug mode: off
+ * Running on http://0.0.0.0:80/ (Press CTRL+C to quit)
+```
 
-> Considera tu hardware/infra: en máquinas locales, el throughput puede ser menor; en staging/cluster, mayor.
+Comprobamos en el puerto 4000 si efectivamente está iniciada o no: http://localhost:4000.
 
----
+Obtendremos un mensaje como este:
 
-## Ejecución local y en CI
+```
+Hello World!
 
-- **Local**: validar *smoke* (1–2 min) antes de cargas largas.
-- **CI/CD**:
-  - GitHub Actions / Jenkins / GitLab CI ejecutan escenarios clave.
-  - Publicar artefactos: `*.jtl`, reportes HTML, gráficos.
-  - **Gates** de calidad: fallar el *pipeline* si p95 > SLO o error rate > 1%.
-  - Paralelizar por escenarios (baseline, carga, estrés).
+Hostname: 0367b056e66e
+Visits: cannot connect to Redis, counter disabled
+```
 
-**Ejemplo mínimo (GitHub Actions)**:
+Ya tenemos una imagen lista para ser usada. Pulsamos Ctrl+C para interrumpir y borrar nuestro contenedor.
+
+## Creando la aplicación
+
+En este caso nuestro contenedor no funciona por sí mismo. Es muy habitual que dependamos de servicios para poder iniciar la aplicación, habitualmente bases de datos. En este caso necesitamos una base de datos Redis que no tenemos.
+
+Como vimos en el apartado anterior, vamos a aprovechar las características de Compose para levantar nuestra aplicación.
+
+Vamos a crear el siguiente archivo `docker-compose.yaml`:
+
+### docker-compose.yaml
 
 ```yaml
-name: perf-tests
-on: [push, workflow_dispatch]
-jobs:
-  jmeter:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup JMeter
-        run: |
-          sudo apt-get update && sudo apt-get install -y jmeter
-      - name: Run baseline
-        run: |
-          jmeter -n -t perf/scripts/checkout.jmx -Jusers=50 -Jrampup=120 -l perf/results/baseline.jtl                  -e -o perf/results/baseline-report
-      - name: Publish artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-results
-          path: perf/results/**
+services:
+    web:
+        build: .
+        ports:
+            - "4000:80"
+    redis:
+        image: redis
+        ports:
+            - "6379:6379"
+        volumes:
+            - "./data:/data"
+        command: redis-server --appendonly yes
 ```
 
----
+La principal diferencia con respecto al capítulo anterior, es que en un servicio podemos indicar una imagen (parámetro imagen) o un build context (parámetro build).
 
-## Análisis de resultados
+Esta es una manera de integrar las dos herramientas que nos proporciona Docker: la creación de imágenes y la composición de aplicaciones con servicios.
 
-1. **Valida primero errores y p95**: si no cumple SLO, no sigas afinando.
-2. **Correlaciona** latencias con **CPU/RAM/GC/DB** para ubicar cuellos de botella.
-3. **Perf triage**:
-   - ¿Baja reutilización de conexiones? ⇒ HikariCP/pool tuning.
-   - ¿Elevada latencia en DB? ⇒ índices, *query plan*, N+1, cacheo.
-   - **I/O bloqueante** en APIs externas ⇒ *timeouts*, *circuit breakers*, *bulkheads*.
-   - **GC/heap**: revisa *young/old gen*, *pause times*.
-4. **Compara con baseline**: muestra mejoras en %.
-5. **Repite**: optimiza → re-ejecuta → documenta.
+## Balanceo de carga
 
----
+Vamos a modificar nuestro `docker-compose.yaml`:
 
-## Buenas prácticas
+### docker-compose.yaml
 
-1. **Datos realistas**: variabilidad para evitar cachés engañosos.
-2. **Correlación**: extrae tokens/IDs en lugar de valores fijos.
-3. **Warmup**: estabiliza JIT y cachés antes de medir.
-4. **Modelo de carga correcto**: *open* vs *closed* según negocio.
-5. **Evidencia reproducible**: versiona scripts, datos y reportes.
-6. **No mezclar** cambios de código y de entorno entre corridas.
-7. **Observabilidad**: logs con *traceId*, métricas, *profilers* puntuales.
+```yaml
+services:
+    web:
+        build: .
+        labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.web.rule=Host(`localhost`)"
+        - "traefik.http.routers.web.entrypoints=web"
+        - "traefik.http.services.web.loadbalancer.server.port=80"
+    redis:
+        image: redis
+        volumes:
+            - "./data:/data"
+        command: redis-server --appendonly yes
+        labels:
+        - "traefik.enable=false"
+    traefik:
+        image: traefik:v2.3
+        command:
+        - "--log.level=DEBUG"
+        - "--api.insecure=true"
+        - "--providers.docker=true"
+        - "--providers.docker.exposedByDefault=false"
+        - "--entrypoints.web.address=:4000"
+        ports:
+        - "4000:4000" # Exponer Traefik en el puerto 4000 de localhost
+        - "8080:8080" # Dashboard de Traefik
+        volumes:
+        - "/var/run/docker.sock:/var/run/docker.sock"
+        labels:
+        - "traef
 
----
+ik.enable=true"
+```
 
-## PARA ENTREGAR CON ESTE TALLER
+En este caso, el servicio web no va a tener acceso al exterior (hemos eliminado el parámetro ports). En su lugar hemos añadido un balanceador de carga (el servicio traefik).
 
-### 1) Repositorio
+Vamos a arrancar esta nueva aplicación, pero esta vez añadiendo varios servicios web:
 
-- **Repositorio Git** con carpeta `perf/` y scripts (JMeter/k6/Gatling).
-- `README.md` con **SLA/SLO**, escenarios, cómo ejecutar y interpretar resultados.
-- **Datos de prueba** en `perf/data/` (sin información sensible).
-- **Resultados** (`perf/results/`) con reportes HTML/CSV de las corridas.
+```bash
+docker compose up -d --scale web=5
+```
 
-### 2) Wiki (obligatoria)
+Esperamos a que terminen de iniciar los servicios:
 
-Estructura mínima sugerida:
+```bash
+$ docker compose up -d --scale web=5
+Creating network "friendlyhello_default" with the default driver
+Creating friendlyhello_redis_1 ... done
+Creating friendlyhello_web_1   ... done
+Creating friendlyhello_web_2   ... done
+Creating friendlyhello_web_3   ... done
+Creating friendlyhello_web_4   ... done
+Creating friendlyhello_web_5   ... done
+Creating friendlyhello_traefik_1    ... done
+```
 
-- **Inicio**: dominio del sistema y objetivos de rendimiento.
-- **Tipos de pruebas**: baseline, carga, stress, spike, soak (con tablas).
-- **Modelos de carga**: VUs vs RPS; *open* vs *closed*.
-- **Plan de pruebas**: SLA/SLO, escenarios, ambiente, riesgos.
-- **Ejecución**: comandos, *pipeline* CI, artefactos.
-- **Resultados**: capturas de reportes y análisis (p95, errores, recursos).
-- **Conclusiones técnicas**: hallazgos y *trade-offs*.
-- **Mejoras propuestas**: acciones de performance tuning.
+Podemos comprobar como del servicio web nos ha iniciado 5 instancias, cada uno con su sufijo numérico correspondiente. Si usamos `docker ps` para ver los contenedores disponibles tendremos:
 
-### 3) Escenarios y scripts
+```bash
+$ docker ps
+CONTAINER ID  IMAGE                [...]   PORTS                                    NAMES
+77acae1d0567  traefik              [...]   443/tcp, 1936/tcp, 0.0.0.0:4000->80/tcp  friendlyhello_traefik_1
+5f12fb8b80c8  friendlyhello_web    [...]   80/tcp                                   friendlyhello_web_5
+fb0024591665  friendlyhello_web    [...]   80/tcp                                   friendlyhello_web_2
+a20d20bdd129  friendlyhello_web    [...]   80/tcp                                   friendlyhello_web_4
+53d7db212df8  friendlyhello_web    [...]   80/tcp                                   friendlyhello_web_3
+41218dbbb882  friendlyhello_web    [...]   80/tcp                                   friendlyhello_web_1
+06f5bf6ed070  redis                [...]   6379/tcp                                 friendlyhello_redis_1
+```
 
-- ≥ **3 escenarios** (baseline, carga, estrés) implementados y versionados.
+Vamos a fijarnos en el `CONTAINER ID` y vamos a volver a abrir nuestra aplicación: http://localhost:4000.
 
-- `perf/scripts/register_voter_k6.js`
-- `perf/data/voter.csv` (≥ 200 filas)
-- `perf/results/*` (`baseline.json`, `load.json`)
-- Breve análisis: p95/p99, error rate, hallazgos y próximas acciones.
+Si en esta ocasión vamos recargando la página, veremos cómo cambian los hostnames, que a su vez coinciden con los identificadores de los contenedores anteriores.
 
-- **Parametrización** y **correlación** en el script (tokens/IDs dinámicos).
-- **Asserts** de tiempo de respuesta y código HTTP.
+Info:
 
-### 4) Reportes y cobertura de escenarios
+Esta no es la manera adecuada de hacer balanceo de carga, puesto que todos los contenedores están en la misma máquina, lo cual no tiene sentido. Solo es una demostración. Para hacer balanceo de carga real necesitaríamos tener o emular un clúster de máquinas y crear un enjambre (swarm).
 
-- Reporte **HTML** por escenario y artefactos `*.jtl`/`*.json`.
-- Tabla de **comparación** vs baseline con % de mejora/degradación.
+## Compartir imágenes
 
-### 5) Matriz de pruebas de rendimiento
+Si tenemos una imagen que queramos compartir, necesitamos usar un registro. Existe incluso una imagen que nos permite crear uno propio, pero vamos a usar el repositorio público de Docker.
 
-| Escenario | Modelo | Duración | SLO | Resultado | Artefactos |
-|---|---|---|---|---|---|
-| Baseline | 50 VUs, p95<300ms | 15 min | p95<300ms | Cumple / No | `results/baseline-report/` |
-| Carga | 0→200 VUs 20 min | p95<500ms | Cumple / No | `results/load-report/` |
-| Estrés | 200→600 VUs | Error<1% | Cumple / No | `results/stress-report/` |
+Los pasos son:
 
-### 6) Gestión de defectos
+1. Crear una cuenta de usuario en el repositorio oficial de Docker.
+2. Pulsar sobre el botón "Create Repository +".
+3. En el formulario hay que rellenar solo un dato obligatoriamente: el nombre. Usaremos el de la imagen: friendlyhello.
 
-- **`defectos.md`** con al menos 1 hallazgo (ej.: N+1, timeout, fuga de memoria), evidencia y estado.
+Nuestro nombre de usuario es el namespace y es obligatorio que tenga uno. Si estuviéramos en alguna organización podríamos elegir entre varios. El resto de campos lo dejamos como está por el momento. La cuenta gratuita solo deja tener un repositorio privado, así que no lo malgastaremos aquí.
 
-### 7) Integración continua
+Ahora tenemos que conectar nuestro cliente de Docker con nuestra cuenta en el Hub. Usamos el comando `docker login`.
 
-- *Pipeline* que ejecute **baseline** y **carga** en cada PR; **estrés/soak** on-demand.
-- **Gates** automáticos (fallar si SLO no se cumple).
+```bash
+$ docker login
+Login with your Docker ID to push and pull images from Docker Hub. If you don't have a Docker ID, head over to https://hub.docker.com to create one.
+Username: username
+Password: ********
+WARNING! Your password will be stored unencrypted in /home/sergio/.docker/config.json.
+Configure a credential helper to remove this warning. See
+https://docs.docker.com/engine/reference/commandline/login/#credentials-store
+```
 
-### 8) Reflexión final (en el Wiki)
+Danger:
 
-- ¿Qué métrica fue más sensible y por qué?
-- ¿Cuál fue el principal cuello de botella y cómo lo mitigaste?
-- ¿Qué cambiarías del diseño para mejorar el rendimiento?
+Las claves se guardan sin cifrar. Hay que configurar un almacén de claves o recordar hacer `docker logout` para borrarla.
 
-### 9) Rúbrica – Taller de Pruebas de Carga y Rendimiento
+Visita la web de referencia para saber cómo crear un almacén.
 
-| **Criterios de evaluación** | **Indicadores de cumplimiento** | **Excelente (5 pts)** | **Bueno (4 pts)** | **Necesita mejorar (3.5 pts)** | **Deficiente (2.5 pts)** | **No cumple (0 pts)** |
-|---|---|---|---|---|---|---|
-| **Estructura del repositorio** | `perf/` con scripts, datos, resultados y README claro. | Estructura impecable y reproducible. | Clara, pocos ajustes. | Parcialmente ordenada. | Desorden o ejecuciones fallan. | No entrega. |
-| **Plan de pruebas (SLA/SLO, modelos, escenarios)** | Definición y justificación. | Completo y alineado al negocio. | Completo con leves omisiones. | Parcial e impreciso. | Incompleto y confuso. | Ausente. |
-| **Scripts (parametrización, correlación, asserts)** | Calidad técnica. | Correctos, robustos y comentados. | Correctos con detalles menores. | Limitados o frágiles. | Errores o sin correlación. | No existen. |
-| **Ejecución y artefactos** | Reportes HTML/CSV y evidencias. | Artefactos limpios y comparables. | Artefactos adecuados. | Evidencia parcial. | Artefactos incompletos. | Sin evidencia. |
-| **Análisis de resultados** | Diagnóstico y recomendaciones. | Análisis profundo y accionable. | Análisis correcto. | Superficial o sin datos. | Conclusiones erróneas. | No analiza. |
-| **CI/CD y gates** | Automatización y umbrales. | Pipeline con gates efectivos. | Pipeline básico. | Pipeline parcial. | Pipeline defectuoso. | Sin CI. |
-| **Matriz de rendimiento** | Tabla y trazabilidad. | Completa y consistente. | Adecuada con omisiones leves. | Incompleta. | Confusa. | Ausente. |
-| **Gestión de defectos** | Registro y estado. | Casos bien documentados. | Casos adecuados. | Superficial. | Sin evidencia. | Ausente. |
-| **Reflexión técnica** | Aprendizajes y mejoras. | Profunda y clara. | Correcta. | Breve. | Vaga. | Ausente. |
+Para que las imágenes se puedan guardar, tenemos que etiquetarla con el mismo nombre que tengamos en nuestro repositorio más el namespace. Si nuestra cuenta es 'username' y el repositorio es 'friendlyhello', debemos crear la imagen con la etiqueta 'username/friendlyhello'.
 
-| Rango de puntaje | Desempeño                                                |
-| ---------------- | -------------------------------------------------------- |
-| 45 – 50          | Excelente dominio técnico y metodológico.                |
-| 35 – 44          | Buen trabajo con documentación o cobertura parcial.      |
-| 30 – 34          | Cumple con lo básico pero sin profundidad.               |
-| < 30             | No cumple con los criterios mínimos del taller/proyecto. |
+```bash
+$ docker build -t username/friendlyhello .
+```
 
----
+Tip:
 
-## Hagamos un resumen
+Por defecto ya hemos dicho que la etiqueta si no se indica es `latest`. Podemos indicar más de una etiqueta para indicar versiones:
 
-- Define **SLA/SLO**, escenarios y **modelo de carga** adecuado.
-- Versiona **scripts, datos y resultados** para reproducibilidad.
-- Ejecuta en **CI** con **gates** automáticos.
-- Analiza **p95, errores y recursos**; prioriza cuellos de botella.
-- Itera: **mide → optimiza → vuelve a medir**.
+```bash
+$ docker build -t username/friendlyhello -t username/friendlyhello:0.1.0 .
+```
 
----
+En la próxima que hagamos le subimos la versión en la etiqueta:
 
-## Conclusión
+```bash
+$ docker build -t username/friendlyhello -t username/friendlyhello:0.2.0 .
+```
 
-Las **pruebas de carga y rendimiento** brindan evidencia objetiva para **dimensionar, optimizar y dar confiabilidad** al sistema bajo demanda realista. Integradas a CI/CD, permiten **evitar degradaciones** y sostener la calidad en producción.
+De esta manera nuestra imagen aparecerá con tres etiquetas: `latest` y `0.2.0` que serán la misma en realidad, y `0.1.0`.
 
----
+Ahora ya podemos enviar nuestra imagen:
 
-## Recursos recomendados
+```bash
+$ docker push username/friendlyhello
+```
 
-- Apache JMeter (User Manual)
-- k6 (docs.k6.io)
-- Gatling (gatling.io)
-- Google SRE Book – Service Level Objectives
-- *Systems Performance* – Brendan Gregg
-- *Release It!* – Michael Nygard
+## Ejercicios
 
----
-
-## Créditos y uso académico
-
-**Autor:** César Augusto Vega Fernández
-**Curso:** Testing y Validación de Software
-**Programa:** Maestría en Ingeniería de Software – Universidad de La Sabana
-**Año:** 2025
-
-Este taller es material académico para el curso *Testing y Validación de Software* y está orientado a fortalecer competencias de **planificación y ejecución de pruebas de rendimiento**, automatización y análisis.
-
----
-
-## Licencia de uso
-
-Este material se distribuye bajo **CC BY-NC-SA 4.0**. Puedes **usar, adaptar o compartir** con fines educativos, siempre que:
-
-1. Se reconozca la autoría del profesor **César Augusto Vega Fernández**.
-2. No se utilice con fines comerciales.
-3. Las obras derivadas se distribuyan bajo la misma licencia.
+1. Cambia el `docker-compose.yaml` para usar tu imagen en vez de hacer build.
+2. Cambia el `docker-compose.yaml` para usar la imagen de algún compañero.

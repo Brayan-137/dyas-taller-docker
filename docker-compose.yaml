@@ -1,0 +1,33 @@
+services:
+    web:
+        image: ebyn2277/friendlyhello
+        labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.web.rule=Host(`localhost`)"
+        - "traefik.http.routers.web.entrypoints=web"
+        - "traefik.http.services.web.loadbalancer.server.port=80"
+    redis:
+        image: redis
+        volumes:
+            - "./data:/data"
+        command: redis-server --appendonly yes
+        labels:
+        - "traefik.enable=false"
+    traefik:
+        image: traefik:v2.11
+        container_name: traefik
+        environment:
+        - DOCKER_API_VERSION=1.40
+        command:
+        - "--log.level=DEBUG"
+        - "--api.insecure=true"
+        - "--providers.docker=true"
+        - "--providers.docker.exposedByDefault=false"
+        - "--entrypoints.web.address=:4000"
+        ports:
+        - "4000:4000" # Exponer Traefik en el puerto 4000 de localhost
+        - "8080:8080" # Dashboard de Traefik
+        volumes:
+        - "/var/run/docker.sock:/var/run/docker.sock"
+        labels:
+        - "traefik.enable=true"
