@@ -1,5 +1,10 @@
 # Taller de Docker
 
+> **Equipo:**
+> - Brayan Presiga Sepulveda - 0000301424
+> - Juan David Sanchez Roldan - 0000340321
+> - Yuly Dayana Rodríguez Salcedo - 0000305314
+
 ## Crear imágenes propias
 
 Ya hemos visto cómo usar imágenes de terceros para crear aplicaciones y servicios. Pero, ¿qué pasa si no hay ninguna imagen que tenga lo que queremos? ¿O si queremos hacer una imagen de nuestra aplicación para distribuirla?
